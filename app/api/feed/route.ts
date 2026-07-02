@@ -53,11 +53,12 @@ export async function POST(req: Request) {
         .eq("id", weak[0].id);
     }
 
-    // 3) Call RPC to select unseen content in these topics
-    const { data: items, error: rpcErr } = await admin.rpc("get_feed", {
+    // 3) Call RPC to select a larger candidate pool of unseen content in these topics
+    const candidateLimit = limit * 4;
+    const { data: candidates, error: rpcErr } = await admin.rpc("get_feed", {
       p_user: user.id,
       p_topics: topics,
-      p_limit: limit,
+      p_limit: candidateLimit,
     });
 
     if (rpcErr) {
@@ -65,8 +66,40 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "failed to retrieve feed" }, { status: 500 });
     }
 
+    // Separate candidates by type
+    const facts = (candidates ?? []).filter((c: any) => c.type === "fact");
+    const quizzes = (candidates ?? []).filter((c: any) => c.type === "quiz");
+    const videos = (candidates ?? []).filter((c: any) => c.type === "video");
+
+    // Define target counts for the batch (e.g. ~15% quizzes, ~25% videos)
+    const targetQuizCount = Math.max(1, Math.floor(limit * 0.15));
+    const targetVideoCount = Math.max(1, Math.floor(limit * 0.25));
+    
+    const selectedQuizzes = quizzes.slice(0, targetQuizCount);
+    const selectedVideos = videos.slice(0, targetVideoCount);
+    
+    // Facts get the remaining slots
+    const targetFactCount = Math.max(0, limit - selectedQuizzes.length - selectedVideos.length);
+    const selectedFacts = facts.slice(0, targetFactCount);
+
+    const finalItems = [...selectedQuizzes, ...selectedVideos, ...selectedFacts];
+
+    // If we don't have enough items to reach the limit, fill from the leftovers
+    if (finalItems.length < limit) {
+      const selectedIds = new Set(finalItems.map(i => i.id));
+      const leftovers = (candidates ?? []).filter((c: any) => !selectedIds.has(c.id));
+      
+      for (const item of leftovers) {
+        if (finalItems.length >= limit) break;
+        finalItems.push(item);
+      }
+    }
+
+    // Shuffle the final items to mix card types
+    finalItems.sort(() => Math.random() - 0.5);
+
     // 4) Shape responses and resolve storage URLs
-    const shaped = (items ?? []).map((c: any) => {
+    const shaped = finalItems.map((c: any) => {
       const base: any = { id: c.id, type: c.type, topic: c.topic, title: c.title };
       if (c.type === "fact") {
         base.tag = c.tag;

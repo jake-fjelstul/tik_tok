@@ -186,12 +186,22 @@ async function refillClips(topic: string) {
 
 async function pass() {
   console.log("=== STARTING CONTENT REFILL PASS ===");
+  const onlyType = process.argv.find(arg => arg.startsWith("--only="))?.split("=")[1];
+  if (onlyType) {
+    console.log(`Only running generation for type: "${onlyType}"`);
+  }
   for (const topic of TOPIC_NAMES) {
     try {
       console.log(`\nProcessing Topic: [${topic}]`);
-      await refillFacts(topic);
-      await refillQuizzes(topic);
-      await refillClips(topic);
+      if (!onlyType || onlyType === "fact") {
+        await refillFacts(topic);
+      }
+      if (!onlyType || onlyType === "quiz") {
+        await refillQuizzes(topic);
+      }
+      if (!onlyType || onlyType === "video" || onlyType === "clip") {
+        await refillClips(topic);
+      }
     } catch (e) {
       console.error(`Error processing topic "${topic}":`, e);
     }

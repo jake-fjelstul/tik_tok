@@ -11,11 +11,58 @@ import {
   Sparkles,
   Loader2,
   Volume2,
-  VolumeX
+  VolumeX,
+  Music
 } from "lucide-react";
 import type { User } from "@supabase/supabase-js";
 import { supabaseBrowser } from "@/lib/supabaseBrowser";
 import { TOPICS, TOPIC_NAMES, BASELINE } from "@/lib/topics";
+
+// Dynamic YouTube Player API loader helper
+let ytScriptPromise: Promise<void> | null = null;
+function loadYoutubeIframeApi(): Promise<void> {
+  if (typeof window === "undefined") return Promise.resolve();
+  if ((window as any).YT && (window as any).YT.Player) {
+    return Promise.resolve();
+  }
+  if (!ytScriptPromise) {
+    ytScriptPromise = new Promise((resolve) => {
+      const existingTag = document.querySelector('script[src="https://www.youtube.com/iframe_api"]');
+      if (existingTag) {
+        if ((window as any).YT && (window as any).YT.Player) {
+          resolve();
+        } else {
+          const interval = setInterval(() => {
+            if ((window as any).YT && (window as any).YT.Player) {
+              clearInterval(interval);
+              resolve();
+            }
+          }, 100);
+        }
+        return;
+      }
+      const tag = document.createElement("script");
+      tag.src = "https://www.youtube.com/iframe_api";
+      const firstScriptTag = document.getElementsByTagName("script")[0];
+      firstScriptTag.parentNode?.insertBefore(tag, firstScriptTag);
+      (window as any).onYouTubeIframeAPIReady = () => {
+        resolve();
+      };
+    });
+  }
+  return ytScriptPromise;
+}
+
+// Simple deterministic hash to pick a track per card ID stably
+function getRandTrack(itemId: string, tracksList: any[]): string | null {
+  if (!tracksList || tracksList.length === 0) return null;
+  let hash = 0;
+  for (let i = 0; i < itemId.length; i++) {
+    hash = itemId.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  const index = Math.abs(hash) % tracksList.length;
+  return tracksList[index].public_url;
+}
 
 // Static seed fallback cards to guarantee the feed works even if the database content pool is empty
 const FALLBACK_SEED = [
@@ -118,29 +165,178 @@ function FactCard({ item, reaction, onReact }: { item: any; reaction: any; onRea
   );
 }
 
-function VideoCard({ item, isActive, reaction, onReact }: { item: any; isActive: boolean; reaction: any; onReact: any }) {
+function VideoCard({ 
+  item, 
+  isActive, 
+  reaction, 
+  onReact,
+  isMutedSession,
+  setIsMutedSession
+}: { 
+  item: any; 
+  isActive: boolean; 
+  reaction: any; 
+  onReact: any;
+  isMutedSession: boolean;
+  setIsMutedSession: (m: boolean) => void;
+}) {
   const hue = TOPICS[item.topic] || "#ffffff";
+  const playerRef = useRef<any>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   const openFull = () => {
     onReact("video");
     window.open(`https://www.youtube.com/watch?v=${item.videoId}&t=${item.start || 0}s`, "_blank");
   };
 
-  const src = `https://www.youtube.com/embed/${item.videoId}?start=${item.start}&end=${item.end}&autoplay=1&mute=1&playsinline=1&rel=0&modestbranding=1`;
+  const playerId = `yt-player-${item.id}`;
+
+  // Setup and destroy the YouTube player instance
+  useEffect(() => {
+    if (!isActive) {
+      if (playerRef.current) {
+        try { playerRef.current.destroy(); } catch {}
+        playerRef.current = null;
+      }
+      return;
+    }
+
+    let isMounted = true;
+    const initPlayer = async () => {
+      await loadYoutubeIframeApi();
+      if (!isMounted) return;
+      try {
+        new (window as any).YT.Player(playerId, {
+          height: "100%",
+          width: "100%",
+          videoId: item.videoId,
+          playerVars: {
+            start: item.start,
+            end: item.end,
+            autoplay: 1,
+            mute: isMutedSession ? 1 : 0,
+            playsinline: 1,
+            controls: 0,
+            rel: 0,
+            modestbranding: 1,
+            enablejsapi: 1,
+          },
+          events: {
+            onReady: (event: any) => {
+              if (!isMounted) {
+                event.target.destroy();
+                return;
+              }
+              playerRef.current = event.target;
+              if (!isMutedSession) {
+                event.target.unMute();
+                event.target.setVolume(100);
+              }
+              event.target.playVideo();
+            },
+            onStateChange: (event: any) => {
+              if (event.data === (window as any).YT.PlayerState.ENDED) {
+                event.target.seekTo(item.start || 0, true);
+                event.target.playVideo();
+              }
+            }
+          }
+        });
+      } catch (err) {
+        console.error("Failed to init player:", err);
+      }
+    };
+    initPlayer();
+
+    return () => {
+      isMounted = false;
+      if (playerRef.current) {
+        try { playerRef.current.destroy(); } catch {}
+        playerRef.current = null;
+      }
+    };
+  }, [isActive, item.videoId, item.start, item.end]);
+
+  // Handle mute changes dynamically on the active player
+  useEffect(() => {
+    if (playerRef.current) {
+      if (isMutedSession) {
+        playerRef.current.mute();
+      } else {
+        playerRef.current.unMute();
+        playerRef.current.setVolume(100);
+      }
+    }
+  }, [isMutedSession]);
+
+  const handleToggleMute = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const nextMute = !isMutedSession;
+    setIsMutedSession(nextMute);
+    if (playerRef.current) {
+      if (nextMute) {
+        playerRef.current.mute();
+      } else {
+        playerRef.current.unMute();
+        playerRef.current.setVolume(100);
+      }
+    }
+  };
 
   return (
     <>
       <TopicEyebrow topic={item.topic} />
       <div className="lf-mlabel" style={{ color: hue, marginBottom: 12 }}>Clip · {item.channel || "YouTube"}</div>
-      <div className="lf-playerwrap">
+      <div className="lf-playerwrap" onClick={handleToggleMute}>
         {isActive ? (
-          <iframe
-            className="lf-iframe"
-            src={src}
-            allow="autoplay; encrypted-media; picture-in-picture"
-            allowFullScreen
-            title={item.title}
-          />
+          <>
+            <div id={playerId} ref={containerRef} className="lf-iframe" />
+            {isMutedSession && (
+              <div
+                style={{
+                  position: "absolute",
+                  inset: 0,
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  background: "rgba(0, 0, 0, 0.45)",
+                  backdropFilter: "blur(2px)",
+                  cursor: "pointer",
+                  zIndex: 10,
+                  transition: "opacity 0.2s"
+                }}
+              >
+                <div
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "center",
+                    gap: "8px",
+                    padding: "12px 18px",
+                    background: "rgba(11, 13, 20, 0.85)",
+                    borderRadius: "16px",
+                    border: "1px solid rgba(255, 255, 255, 0.12)",
+                    boxShadow: "0 8px 32px rgba(0, 0, 0, 0.5)",
+                  }}
+                >
+                  <VolumeX size={26} style={{ color: "#ffffff" }} />
+                  <span
+                    style={{
+                      fontSize: "11px",
+                      fontWeight: 700,
+                      color: "#ffffff",
+                      letterSpacing: "0.1em",
+                      textTransform: "uppercase",
+                      fontFamily: "Inter, sans-serif"
+                    }}
+                  >
+                    Tap to Unmute
+                  </span>
+                </div>
+              </div>
+            )}
+          </>
         ) : (
           <div className="lf-poster" style={{ color: hue }} onClick={openFull}>
             <Play size={46} fill="currentColor" />
@@ -303,6 +499,11 @@ export default function LearnFeed() {
   const [activeIndex, setActiveIndex] = useState(0);
   const [soundOn, setSoundOn] = useState(true);
   const [installPrompt, setInstallPrompt] = useState<any>(null);
+  const [isMutedSession, setIsMutedSession] = useState<boolean>(true);
+  const [bgMusicMuted, setBgMusicMuted] = useState<boolean>(false);
+  const [tracks, setTracks] = useState<any[]>([]);
+
+  const bgMusicRef = useRef<HTMLAudioElement | null>(null);
 
   useEffect(() => {
     const handleBeforeInstallPrompt = (e: Event) => {
@@ -332,6 +533,34 @@ export default function LearnFeed() {
   const dwelledIdsRef = useRef<Set<string>>(new Set());
   const soundRef = useRef<boolean>(true);
   const currentAudioRef = useRef<HTMLAudioElement | null>(null);
+
+  // Fetch music tracks on mount and initialize background audio element
+  useEffect(() => {
+    const fetchMusic = async () => {
+      try {
+        const res = await fetch("/api/music");
+        if (!res.ok) throw new Error("Failed to fetch music from API");
+        const data = await res.json();
+        if (data.tracks) setTracks(data.tracks);
+      } catch (err) {
+        console.error("Failed to fetch music tracks:", err);
+      }
+    };
+    fetchMusic();
+
+    if (typeof window !== "undefined") {
+      const audio = new Audio();
+      audio.loop = true;
+      audio.volume = 0.25;
+      bgMusicRef.current = audio;
+    }
+    return () => {
+      if (bgMusicRef.current) {
+        bgMusicRef.current.pause();
+        bgMusicRef.current = null;
+      }
+    };
+  }, []);
 
   // Sync references
   useEffect(() => { interestRef.current = interest; }, [interest]);
@@ -366,9 +595,10 @@ export default function LearnFeed() {
     window.speechSynthesis.speak(u);
   };
 
-  const playNarration = useCallback((item: any) => {
+  const playNarration = useCallback((item: any, bypassMuteCheck = false) => {
     stopAudio();
     if (!soundRef.current || item.type !== "fact") return;
+    if (isMutedSession && !bypassMuteCheck) return;
 
     const textToSpeak = item.body;
     if (!textToSpeak) return;
@@ -383,7 +613,7 @@ export default function LearnFeed() {
     } else {
       speakText(textToSpeak);
     }
-  }, [stopAudio]);
+  }, [stopAudio, isMutedSession]);
 
   const logEngagement = useCallback(async (item: any, action: string, dwellS?: number) => {
     try {
@@ -522,6 +752,7 @@ export default function LearnFeed() {
       const initInterest = Object.fromEntries(inserts.map((i) => [i.topic, i.weight]));
       setInterest(initInterest);
       setPhase("feed");
+      setIsMutedSession(false); // Onboarding start click is a valid gesture, so unlock audio session-wide
 
       // Initialize sound system within gesture
       if (typeof window !== "undefined" && window.speechSynthesis) {
@@ -600,15 +831,51 @@ export default function LearnFeed() {
     };
   }, [phase, items, logEngagement, loadMore]);
 
-  // Audio trigger on active card change
+  // Handle background music playback based on active card and audio states
+  useEffect(() => {
+    if (phase !== "feed") {
+      bgMusicRef.current?.pause();
+      return;
+    }
+    const activeItem = items[activeIndex];
+    if (!activeItem) return;
+
+    if (activeItem.type === "video") {
+      bgMusicRef.current?.pause();
+      return;
+    }
+
+    if (bgMusicRef.current && tracks.length > 0) {
+      const trackUrl = getRandTrack(activeItem.id, tracks);
+      if (trackUrl) {
+        if (bgMusicRef.current.src !== trackUrl) {
+          bgMusicRef.current.src = trackUrl;
+          bgMusicRef.current.load();
+        }
+        const shouldMute = isMutedSession || bgMusicMuted;
+        bgMusicRef.current.muted = shouldMute;
+        if (!shouldMute) {
+          bgMusicRef.current.play().catch(() => {});
+        } else {
+          bgMusicRef.current.play().catch(() => {}); // play muted to preserve autoplay unlock
+        }
+      }
+    }
+  }, [activeIndex, phase, items, tracks, isMutedSession, bgMusicMuted]);
+
+  // Audio trigger on active card change, session unlock, or sound toggle
   useEffect(() => {
     if (phase === "feed" && items[activeIndex]) {
-      playNarration(items[activeIndex]);
+      if (soundOn) {
+        playNarration(items[activeIndex]);
+      } else {
+        stopAudio();
+      }
     }
     return () => {
       stopAudio();
     };
-  }, [activeIndex, phase, playNarration, stopAudio, items]);
+  }, [activeIndex, phase, playNarration, stopAudio, items, isMutedSession, soundOn]);
 
   if (phase === "loading") {
     return (
@@ -623,9 +890,40 @@ export default function LearnFeed() {
     return <Onboarding onStart={handleStart} />;
   }
 
+  const handleGlobalClick = () => {
+    if (isMutedSession) {
+      setIsMutedSession(false);
+      if (bgMusicRef.current && bgMusicRef.current.src) {
+        bgMusicRef.current.muted = bgMusicMuted;
+        bgMusicRef.current.play().catch(() => {});
+      }
+      const activeItem = items[activeIndex];
+      if (activeItem) {
+        playNarration(activeItem, true);
+      }
+    }
+  };
+
   return (
-    <div className="lf-root">
+    <div className="lf-root" onClick={handleGlobalClick}>
       <Meter interest={interest} open={sheetOpen} setOpen={setSheetOpen} />
+      <div
+        className="lf-sound"
+        style={{ right: "64px" }}
+        onClick={(e) => {
+          e.stopPropagation();
+          setBgMusicMuted((prev) => {
+            const nextMuted = !prev;
+            if (!nextMuted) {
+              setIsMutedSession(false);
+            }
+            return nextMuted;
+          });
+        }}
+        title={bgMusicMuted ? "Unmute music" : "Mute music"}
+      >
+        <Music size={18} style={{ opacity: bgMusicMuted ? 0.4 : 1 }} />
+      </div>
       <div
         className="lf-sound"
         onClick={() => setSoundOn((s) => !s)}
@@ -667,6 +965,8 @@ export default function LearnFeed() {
                   isActive={idx === activeIndex}
                   reaction={reactions[item.id]}
                   onReact={(k: any) => handleReact(item, k)}
+                  isMutedSession={isMutedSession}
+                  setIsMutedSession={setIsMutedSession}
                 />
               )}
               {item.type === "quiz" && (
