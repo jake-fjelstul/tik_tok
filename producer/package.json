@@ -1,0 +1,19 @@
+{
+  "name": "learnfeed-producer",
+  "version": "1.0.0",
+  "main": "producer.ts",
+  "scripts": {
+    "start": "ts-node -O \"{\\\"module\\\": \\\"commonjs\\\"}\" producer.ts"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.45.4",
+    "dotenv": "^16.4.5",
+    "openai": "^4.67.3",
+    "youtube-transcript": "^1.2.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.9",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.5.2"
+  }
+}
