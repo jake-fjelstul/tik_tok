@@ -64,6 +64,46 @@ function getRandTrack(itemId: string, tracksList: any[]): string | null {
   return tracksList[index].public_url;
 }
 
+const playCorrectSound = (volume: number = 0.5) => {
+  if (typeof window === "undefined") return;
+  try {
+    const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
+    if (!AudioContext) return;
+    const ctx = new AudioContext();
+    const now = ctx.currentTime;
+
+    const osc1 = ctx.createOscillator();
+    const gain1 = ctx.createGain();
+    osc1.type = "sine";
+    osc1.frequency.setValueAtTime(659.25, now); // E5
+    gain1.gain.setValueAtTime(0, now);
+    gain1.gain.linearRampToValueAtTime(volume * 0.3, now + 0.04);
+    gain1.gain.exponentialRampToValueAtTime(0.0001, now + 0.25);
+
+    osc1.connect(gain1);
+    gain1.connect(ctx.destination);
+
+    const osc2 = ctx.createOscillator();
+    const gain2 = ctx.createGain();
+    osc2.type = "sine";
+    osc2.frequency.setValueAtTime(783.99, now + 0.08); // G5
+    gain2.gain.setValueAtTime(0, now + 0.08);
+    gain2.gain.linearRampToValueAtTime(volume * 0.4, now + 0.12);
+    gain2.gain.exponentialRampToValueAtTime(0.0001, now + 0.4);
+
+    osc2.connect(gain2);
+    gain2.connect(ctx.destination);
+
+    osc1.start(now);
+    osc1.stop(now + 0.3);
+
+    osc2.start(now + 0.08);
+    osc2.stop(now + 0.45);
+  } catch (e) {
+    console.warn("Failed to play correct sound effect:", e);
+  }
+};
+
 // Static seed fallback cards to guarantee the feed works even if the database content pool is empty
 const FALLBACK_SEED = [
   {
@@ -502,6 +542,9 @@ export default function LearnFeed() {
   const [isMutedSession, setIsMutedSession] = useState<boolean>(true);
   const [bgMusicMuted, setBgMusicMuted] = useState<boolean>(false);
   const [tracks, setTracks] = useState<any[]>([]);
+  const [bgMusicVolume, setBgMusicVolume] = useState<number>(0.10);
+  const [voiceVolume, setVoiceVolume] = useState<number>(1.0);
+  const [voiceSpeed, setVoiceSpeed] = useState<number>(1.5);
 
   const bgMusicRef = useRef<HTMLAudioElement | null>(null);
 
@@ -551,7 +594,7 @@ export default function LearnFeed() {
     if (typeof window !== "undefined") {
       const audio = new Audio();
       audio.loop = true;
-      audio.volume = 0.25;
+      audio.volume = bgMusicVolume;
       bgMusicRef.current = audio;
     }
     return () => {
@@ -561,6 +604,22 @@ export default function LearnFeed() {
       }
     };
   }, []);
+
+  // Update background music volume dynamically
+  useEffect(() => {
+    if (bgMusicRef.current) {
+      bgMusicRef.current.volume = bgMusicVolume;
+    }
+  }, [bgMusicVolume]);
+
+  // Update active narration volume and speed dynamically
+  useEffect(() => {
+    if (currentAudioRef.current) {
+      currentAudioRef.current.volume = voiceVolume;
+      currentAudioRef.current.defaultPlaybackRate = voiceSpeed;
+      currentAudioRef.current.playbackRate = voiceSpeed;
+    }
+  }, [voiceVolume, voiceSpeed]);
 
   // Sync references
   useEffect(() => { interestRef.current = interest; }, [interest]);
@@ -591,7 +650,8 @@ export default function LearnFeed() {
     if (typeof window === "undefined" || !window.speechSynthesis) return;
     window.speechSynthesis.cancel();
     const u = new SpeechSynthesisUtterance(text);
-    u.rate = 1.2;
+    u.rate = voiceSpeed;
+    u.volume = voiceVolume;
     window.speechSynthesis.speak(u);
   };
 
@@ -605,6 +665,9 @@ export default function LearnFeed() {
 
     if (item.audioUrl) {
       const audio = new Audio(item.audioUrl);
+      audio.defaultPlaybackRate = voiceSpeed;
+      audio.playbackRate = voiceSpeed;
+      audio.volume = voiceVolume;
       currentAudioRef.current = audio;
       audio.play().catch((err) => {
         console.warn("MP3 narration playback blocked/failed, falling back to Web Speech:", err);
@@ -613,7 +676,7 @@ export default function LearnFeed() {
     } else {
       speakText(textToSpeak);
     }
-  }, [stopAudio, isMutedSession]);
+  }, [stopAudio, isMutedSession, voiceSpeed, voiceVolume]);
 
   const logEngagement = useCallback(async (item: any, action: string, dwellS?: number) => {
     try {
@@ -778,6 +841,9 @@ export default function LearnFeed() {
   const handleAnswer = (item: any, correct: boolean) => {
     const action = correct ? "quiz_correct" : "quiz_wrong";
     logEngagement(item, action);
+    if (correct) {
+      playCorrectSound(voiceVolume);
+    }
   };
 
   // IntersectionObserver for Snap-card scrolling and active indexing
@@ -879,16 +945,54 @@ export default function LearnFeed() {
 
   if (phase === "loading") {
     return (
-      <div className="lf-center">
-        <Loader2 className="lf-spin text-amber-400" size={32} />
-        <span className="text-gray-400 mt-2 text-sm">Aligning your interest vectors…</span>
+      <div className="lf-root">
+        <div className="lf-container" style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
+          <Loader2 className="lf-spin text-amber-400" size={32} />
+          <span className="text-gray-400 mt-2 text-sm">Aligning your interest vectors…</span>
+        </div>
       </div>
     );
   }
 
   if (phase === "onboard") {
-    return <Onboarding onStart={handleStart} />;
+    return (
+      <div className="lf-root">
+        <div className="lf-container">
+          <Onboarding onStart={handleStart} />
+        </div>
+      </div>
+    );
   }
+
+  const renderAudioTicker = (item: any) => {
+    let label = "Original Audio - LearnFeed";
+    if (item.type === "video") {
+      const channel = item.payload?.channel || "Original Creator";
+      const title = item.title || "Clip";
+      label = `Original Audio - ${channel} (${title})`;
+    } else {
+      const trackUrl = getRandTrack(item.id, tracks);
+      const track = tracks.find((t) => t.public_url === trackUrl);
+      if (track) {
+        label = `${track.title} - LearnFeed Background Music`;
+      } else {
+        label = "Original Audio - LearnFeed Narrator";
+      }
+    }
+
+    return (
+      <div className="lf-audio-ticker">
+        <div className="lf-music-disc">
+          <Music size={10} />
+        </div>
+        <div className="lf-marquee-wrapper">
+          <span className="lf-marquee-text">
+            {label}{" \u00a0\u00a0\u00a0\u00a0•\u00a0\u00a0\u00a0\u00a0 "}{label}{" \u00a0\u00a0\u00a0\u00a0•\u00a0\u00a0\u00a0\u00a0 "}
+          </span>
+        </div>
+      </div>
+    );
+  };
 
   const handleGlobalClick = () => {
     if (isMutedSession) {
@@ -906,30 +1010,89 @@ export default function LearnFeed() {
 
   return (
     <div className="lf-root" onClick={handleGlobalClick}>
+      <div className="lf-container">
       <Meter interest={interest} open={sheetOpen} setOpen={setSheetOpen} />
-      <div
-        className="lf-sound"
-        style={{ right: "64px" }}
-        onClick={(e) => {
-          e.stopPropagation();
-          setBgMusicMuted((prev) => {
-            const nextMuted = !prev;
-            if (!nextMuted) {
-              setIsMutedSession(false);
-            }
-            return nextMuted;
-          });
-        }}
-        title={bgMusicMuted ? "Unmute music" : "Mute music"}
-      >
-        <Music size={18} style={{ opacity: bgMusicMuted ? 0.4 : 1 }} />
+      {/* Background Music Control */}
+      <div className="lf-sound-container" style={{ right: "64px" }}>
+        <div
+          className="lf-sound-icon"
+          onClick={(e) => {
+            e.stopPropagation();
+            setBgMusicMuted((prev) => {
+              const nextMuted = !prev;
+              if (!nextMuted) {
+                setIsMutedSession(false);
+              }
+              return nextMuted;
+            });
+          }}
+          title={bgMusicMuted ? "Unmute music" : "Mute music"}
+        >
+          <Music size={18} style={{ opacity: bgMusicMuted ? 0.4 : 1 }} />
+        </div>
+        <div className="lf-sound-panel" onClick={(e) => e.stopPropagation()}>
+          <div className="lf-slider-group">
+            <label className="lf-slider-label">
+              <span>Music Volume</span>
+              <span className="lf-slider-value">{Math.round(bgMusicVolume * 100)}%</span>
+            </label>
+            <input
+              type="range"
+              min="0"
+              max="1"
+              step="0.05"
+              value={bgMusicVolume}
+              onChange={(e) => setBgMusicVolume(parseFloat(e.target.value))}
+              className="lf-slider-input"
+            />
+          </div>
+        </div>
       </div>
-      <div
-        className="lf-sound"
-        onClick={() => setSoundOn((s) => !s)}
-        title={soundOn ? "Mute narration" : "Unmute narration"}
-      >
-        {soundOn ? <Volume2 size={18} /> : <VolumeX size={18} />}
+
+      {/* Narration/Voice Control */}
+      <div className="lf-sound-container" style={{ right: "16px" }}>
+        <div
+          className="lf-sound-icon"
+          onClick={(e) => {
+            e.stopPropagation();
+            setSoundOn((s) => !s);
+          }}
+          title={soundOn ? "Mute narration" : "Unmute narration"}
+        >
+          {soundOn ? <Volume2 size={18} /> : <VolumeX size={18} />}
+        </div>
+        <div className="lf-sound-panel" onClick={(e) => e.stopPropagation()}>
+          <div className="lf-slider-group">
+            <label className="lf-slider-label">
+              <span>Voice Volume</span>
+              <span className="lf-slider-value">{Math.round(voiceVolume * 100)}%</span>
+            </label>
+            <input
+              type="range"
+              min="0"
+              max="1"
+              step="0.05"
+              value={voiceVolume}
+              onChange={(e) => setVoiceVolume(parseFloat(e.target.value))}
+              className="lf-slider-input"
+            />
+          </div>
+          <div className="lf-slider-group" style={{ marginTop: "8px" }}>
+            <label className="lf-slider-label">
+              <span>Voice Speed</span>
+              <span className="lf-slider-value">{voiceSpeed}x</span>
+            </label>
+            <input
+              type="range"
+              min="0.5"
+              max="2.0"
+              step="0.05"
+              value={voiceSpeed}
+              onChange={(e) => setVoiceSpeed(parseFloat(e.target.value))}
+              className="lf-slider-input"
+            />
+          </div>
+        </div>
       </div>
 
       <div className="lf-feed">
@@ -975,6 +1138,7 @@ export default function LearnFeed() {
                   onAnswer={(c) => handleAnswer(item, c)}
                 />
               )}
+              {renderAudioTicker(item)}
             </div>
           );
         })}
@@ -1010,7 +1174,7 @@ export default function LearnFeed() {
         )}
       </div>
       {installPrompt && (
-        <div className="fixed bottom-4 left-4 right-4 z-50 bg-[#141620]/90 border border-white/10 rounded-2xl p-4 flex items-center justify-between shadow-2xl backdrop-blur-md">
+        <div className="absolute bottom-4 left-4 right-4 z-50 bg-[#141620]/90 border border-white/10 rounded-2xl p-4 flex items-center justify-between shadow-2xl backdrop-blur-md">
           <div className="flex flex-col">
             <span className="text-[10px] font-mono uppercase tracking-wider text-amber-400">Install App</span>
             <span className="text-xs text-gray-300">Add LearnFeed to home screen</span>
@@ -1023,6 +1187,7 @@ export default function LearnFeed() {
           </button>
         </div>
       )}
+      </div>
     </div>
   );
 }
