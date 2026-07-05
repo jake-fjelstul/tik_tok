@@ -14,6 +14,7 @@ export const TOPICS: Record<string, string> = {
   "Money & Economics": "#E0C53B",
   "Physics": "#3B9EE0",
   "Skills & Productivity": "#E07ABF",
+  "Interview Prep": "#F59E0B",
 };
 export const TOPIC_NAMES = Object.keys(TOPICS);
 export const BASELINE = 0.1;

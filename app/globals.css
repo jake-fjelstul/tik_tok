@@ -448,14 +448,20 @@
 
 .lf-audio-ticker {
   position: absolute;
-  bottom: 40px;
+  bottom: 80px;
   left: 26px;
   right: 86px;
   display: flex;
   align-items: center;
   gap: 8px;
   z-index: 10;
-  pointer-events: none;
+  pointer-events: auto; /* Enable interaction */
+  cursor: pointer;
+  transition: opacity 0.2s ease;
+}
+
+.lf-audio-ticker:hover {
+  opacity: 0.85;
 }
 
 .lf-music-disc {
@@ -503,4 +509,12 @@
 @keyframes lf-marquee {
   0% { transform: translate3d(0, 0, 0); }
   100% { transform: translate3d(-50%, 0, 0); }
+}
+
+@keyframes heart-pulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.3); }
+}
+.lf-heart-pulse {
+  animation: heart-pulse 0.4s ease-in-out;
 }

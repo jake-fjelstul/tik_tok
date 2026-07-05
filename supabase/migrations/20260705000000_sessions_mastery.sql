@@ -1,117 +1,6 @@
-create extension if not exists "pgcrypto";
-
--- shared content pool ------------------------------------------------------
-create table content (
-  id         uuid primary key default gen_random_uuid(),
-  type       text not null check (type in ('fact','quiz','video')),
-  topic      text not null,
-  source     text not null default 'producer',
-  title      text,
-  body       text,
-  tag        text,
-  payload    jsonb,
-  audio_path text,
-  created_at timestamptz not null default now()
-);
-create index on content (topic);
-create index on content (type);
-
-create table youtube_videos (
-  video_id   text primary key,
-  title      text, channel text, duration_s int, topic text,
-  fetched_at timestamptz not null default now()
-);
-create table youtube_clips (
-  id uuid primary key default gen_random_uuid(),
-  video_id text references youtube_videos(video_id),
-  topic text not null, start_s int not null, end_s int not null,
-  transcript_excerpt text, reason text,
-  content_id uuid references content(id) on delete set null,
-  created_at timestamptz not null default now()
-);
-
--- per-user state -----------------------------------------------------------
-create table user_interest (
-  user_id uuid references auth.users(id) on delete cascade,
-  topic text not null, weight real not null default 0.1,
-  updated_at timestamptz not null default now(),
-  primary key (user_id, topic)
-);
-create table user_seen (
-  user_id uuid references auth.users(id) on delete cascade,
-  content_id uuid references content(id) on delete cascade,
-  seen_at timestamptz not null default now(),
-  primary key (user_id, content_id)
-);
-create table user_weak_topics (
-  id uuid primary key default gen_random_uuid(),
-  user_id uuid references auth.users(id) on delete cascade,
-  topic text not null, resolved boolean not null default false,
-  created_at timestamptz not null default now()
-);
-create table engagement_log (
-  id bigserial primary key,
-  user_id uuid references auth.users(id) on delete cascade,
-  content_id uuid references content(id) on delete cascade,
-  action text not null, dwell_s real,
-  created_at timestamptz not null default now()
-);
-
--- future: app-generated videos
-create table generated_videos (
-  id uuid primary key default gen_random_uuid(),
-  source_content_id uuid references content(id) on delete set null,
-  topic text, asset_path text,
-  status text not null default 'pending',
-  created_at timestamptz not null default now()
-);
-
--- serve unseen content in the chosen topics --------------------------------
-create or replace function get_feed(p_user uuid, p_topics text[], p_limit int)
-returns setof content language sql stable as $$
-  select c.* from content c
-  left join public.user_interest ui on ui.user_id = p_user and ui.topic = c.topic
-  left join public.topic_mastery m on m.user_id = p_user and m.topic = c.topic
-  where c.topic = any(p_topics)
-    and not exists (
-      select 1 from user_seen s where s.user_id = p_user and s.content_id = c.id
-    )
-  order by
-    (coalesce(ui.weight, 0.1) * (1.2 - coalesce(m.mastery, 0.0))) *
-    (case 
-      when c.type = 'quiz' and m.last_attempt_at is not null then
-        least(1.0, extract(epoch from (now() - m.last_attempt_at)) / 86400.0)
-      else 1.0
-     end) desc,
-    random()
-  limit p_limit;
-$$;
-
--- RLS ----------------------------------------------------------------------
-alter table content enable row level security;
-alter table youtube_videos enable row level security;
-alter table youtube_clips enable row level security;
-alter table user_interest enable row level security;
-alter table user_seen enable row level security;
-alter table user_weak_topics enable row level security;
-alter table engagement_log enable row level security;
-
-create policy "content public read" on content for select using (true);
-create policy "yt videos public read" on youtube_videos for select using (true);
-create policy "yt clips public read" on youtube_clips for select using (true);
-
-create policy "own interest" on user_interest
-  for all using (user_id = auth.uid()) with check (user_id = auth.uid());
-create policy "own seen" on user_seen
-  for all using (user_id = auth.uid()) with check (user_id = auth.uid());
-create policy "own weak" on user_weak_topics
-  for all using (user_id = auth.uid()) with check (user_id = auth.uid());
-create policy "own engagement" on engagement_log
-  for all using (user_id = auth.uid()) with check (user_id = auth.uid());
-
--- Storage bucket (or create in dashboard): public read narration
-insert into storage.buckets (id, name, public) values ('narration','narration', true)
-  on conflict (id) do nothing;
+-- ============================================================
+-- Migration: learning sessions + topic mastery
+-- ============================================================
 
 -- 1. Sessions ------------------------------------------------
 create table if not exists public.learning_sessions (
@@ -154,7 +43,55 @@ create table if not exists public.topic_mastery (
   primary key (user_id, topic)
 );
 
--- 4. Trigger: recompute mastery + session counters on each answer
+-- 4. SQL Backfill from engagement_log oldest-first ----------------
+do $$
+declare
+  r record;
+  hit int;
+  alpha constant numeric := 0.3;
+  prev public.topic_mastery%rowtype;
+begin
+  -- Check if engagement_log exists and has quiz actions
+  if exists (
+    select 1 from information_schema.tables 
+    where table_schema = 'public' and table_name = 'engagement_log'
+  ) then
+    for r in 
+      select e.user_id, e.content_id, c.topic, (e.action = 'quiz_correct') as is_correct, e.created_at
+      from public.engagement_log e
+      join public.content c on e.content_id = c.id
+      where e.action in ('quiz_correct', 'quiz_wrong')
+      order by e.created_at asc
+    loop
+      hit := case when r.is_correct then 1 else 0 end;
+      
+      -- Insert into quiz_responses first so we have the detailed logs
+      insert into public.quiz_responses(user_id, content_id, session_id, topic, selected, is_correct, answered_at)
+      values (r.user_id, r.content_id, null, coalesce(r.topic, 'unknown'), null, r.is_correct, r.created_at);
+
+      select * into prev from public.topic_mastery
+      where user_id = r.user_id and topic = r.topic;
+
+      if not found then
+        insert into public.topic_mastery(
+          user_id, topic, attempts, correct, current_streak, mastery, last_attempt_at, updated_at)
+        values (r.user_id, r.topic, 1, hit, hit, hit, r.created_at, r.created_at);
+      else
+        update public.topic_mastery set
+          attempts        = prev.attempts + 1,
+          correct         = prev.correct + hit,
+          current_streak  = case when r.is_correct then prev.current_streak + 1 else 0 end,
+          mastery         = round(alpha * hit + (1 - alpha) * prev.mastery, 3),
+          last_attempt_at = r.created_at,
+          updated_at      = now()
+        where user_id = r.user_id and topic = r.topic;
+      end if;
+    end loop;
+  end if;
+end;
+$$;
+
+-- 5. Trigger function: recompute mastery + session counters on each answer
 create or replace function public.apply_quiz_response()
 returns trigger
 language plpgsql
@@ -200,7 +137,7 @@ create trigger trg_apply_quiz_response
 after insert on public.quiz_responses
 for each row execute function public.apply_quiz_response();
 
--- 5. RLS for new tables --------------------------------------
+-- 6. RLS -----------------------------------------------------
 alter table public.learning_sessions enable row level security;
 alter table public.quiz_responses    enable row level security;
 alter table public.topic_mastery     enable row level security;
@@ -215,10 +152,15 @@ create policy "own sessions" on public.learning_sessions
 create policy "own responses" on public.quiz_responses
   for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
 
+-- mastery is written ONLY by the security-definer trigger, so users get read-only
 create policy "read own mastery" on public.topic_mastery
   for select using (auth.uid() = user_id);
 
--- 6. RPC functions -------------------------------------------
+-- ============================================================
+-- RPC Functions
+-- ============================================================
+
+-- Start a session, return its id
 create or replace function public.start_session(p_goal text default null, p_target int default 12)
 returns uuid
 language plpgsql security definer set search_path = public as $$
@@ -230,6 +172,7 @@ begin
   return v_id;
 end; $$;
 
+-- Count a card view; tell the client when the target is hit (→ show the end screen)
 create or replace function public.log_card_view(p_session_id uuid)
 returns jsonb
 language plpgsql security definer set search_path = public as $$
@@ -249,6 +192,7 @@ begin
   );
 end; $$;
 
+-- Log a quiz answer. Server derives topic + correctness. Returns feedback for the UI.
 create or replace function public.log_quiz_response(
   p_content_id uuid, p_selected text, p_session_id uuid default null)
 returns jsonb
@@ -259,6 +203,7 @@ declare
   v_correct text;
   v_ok      boolean;
 begin
+  -- Get topic and correct answer (resolving index to string if needed)
   select topic, payload->>'correct' into v_topic, v_correct_val
   from public.content where id = p_content_id;
 
@@ -277,6 +222,7 @@ begin
   return jsonb_build_object('is_correct', v_ok, 'correct', v_correct, 'topic', v_topic);
 end; $$;
 
+-- End a session; mark completed if the target was reached
 create or replace function public.end_session(p_session_id uuid)
 returns void
 language plpgsql security definer set search_path = public as $$
@@ -287,6 +233,7 @@ begin
   where id = p_session_id and user_id = auth.uid() and ended_at is null;
 end; $$;
 
+-- Progress summary for the mastery/progress UI + session-end screen
 create or replace function public.get_progress()
 returns jsonb
 language plpgsql security definer set search_path = public as $$
@@ -317,3 +264,24 @@ begin
             order by started_at desc limit 10) s)
   );
 end; $$;
+
+-- Update get_feed function
+create or replace function get_feed(p_user uuid, p_topics text[], p_limit int)
+returns setof content language sql stable as $$
+  select c.* from content c
+  left join public.user_interest ui on ui.user_id = p_user and ui.topic = c.topic
+  left join public.topic_mastery m on m.user_id = p_user and m.topic = c.topic
+  where c.topic = any(p_topics)
+    and not exists (
+      select 1 from user_seen s where s.user_id = p_user and s.content_id = c.id
+    )
+  order by
+    (coalesce(ui.weight, 0.1) * (1.2 - coalesce(m.mastery, 0.0))) *
+    (case 
+      when c.type = 'quiz' and m.last_attempt_at is not null then
+        least(1.0, extract(epoch from (now() - m.last_attempt_at)) / 86400.0)
+      else 1.0
+     end) desc,
+    random()
+  limit p_limit;
+$$;

@@ -1,10 +1,11 @@
 import { NextResponse } from "next/server";
 import { supabaseUser, supabaseAdmin } from "@/lib/supabaseServer";
 import { chooseBatchTopics } from "@/lib/recommender";
+import { TOPIC_NAMES } from "@/lib/topics";
 
 export async function POST(req: Request) {
   try {
-    const { limit = 8 } = await req.json().catch(() => ({}));
+    const { limit = 8, disabledTopics = [] } = await req.json().catch(() => ({}));
     
     // Authenticate the user session via cookies
     const u = await supabaseUser();
@@ -25,12 +26,25 @@ export async function POST(req: Request) {
       console.error("Error fetching interest weights:", interestErr);
     }
     
-    const interest: Record<string, number> = Object.fromEntries(
-      (rows ?? []).map(r => [r.topic, r.weight])
-    );
+    const interest: Record<string, number> = {};
+    for (const name of TOPIC_NAMES) {
+      interest[name] = 0.1;
+    }
+    (rows ?? []).forEach(r => {
+      interest[r.topic] = r.weight;
+    });
     
     // Choose exploitation and exploration topics
-    const topics = chooseBatchTopics(interest);
+    let topics = chooseBatchTopics(interest);
+
+    // Filter out any disabled topics
+    if (disabledTopics && disabledTopics.length > 0) {
+      topics = topics.filter(t => !disabledTopics.includes(t));
+      // If we filtered out all topics, fallback to all enabled ones
+      if (topics.length === 0) {
+        topics = TOPIC_NAMES.filter(t => !disabledTopics.includes(t));
+      }
+    }
 
     // 2) Reinforce one unresolved weak topic (from incorrect quiz answers)
     const { data: weak, error: weakErr } = await admin
@@ -45,12 +59,15 @@ export async function POST(req: Request) {
     }
 
     if (weak && weak.length > 0) {
-      topics.push(weak[0].topic);
-      // Mark this weak topic as resolved so it doesn't immediately repeat
-      await admin
-        .from("user_weak_topics")
-        .update({ resolved: true })
-        .eq("id", weak[0].id);
+      const weakTopic = weak[0].topic;
+      if (!disabledTopics.includes(weakTopic)) {
+        topics.push(weakTopic);
+        // Mark this weak topic as resolved so it doesn't immediately repeat
+        await admin
+          .from("user_weak_topics")
+          .update({ resolved: true })
+          .eq("id", weak[0].id);
+      }
     }
 
     // 3) Call RPC to select a larger candidate pool of unseen content in these topics
@@ -82,9 +99,34 @@ export async function POST(req: Request) {
     const targetFactCount = Math.max(0, limit - selectedQuizzes.length - selectedVideos.length);
     const selectedFacts = facts.slice(0, targetFactCount);
 
-    const finalItems = [...selectedQuizzes, ...selectedVideos, ...selectedFacts];
+    let finalItems = [...selectedQuizzes, ...selectedVideos, ...selectedFacts];
 
-    // If we don't have enough items to reach the limit, fill from the leftovers
+    // If we don't have enough items to reach the limit, try to recycle seen facts and videos in these topics
+    if (finalItems.length < limit) {
+      const selectedIds = new Set(finalItems.map(i => i.id));
+      const needed = limit - finalItems.length;
+      
+      const { data: recycled } = await admin
+        .from("content")
+        .select("*")
+        .in("type", ["fact", "video"])
+        .in("topic", topics)
+        .limit(needed * 2);
+        
+      if (recycled && recycled.length > 0) {
+        // Filter out items already selected in this batch
+        const filteredRecycled = recycled.filter((r: any) => !selectedIds.has(r.id));
+        // Sort randomly to avoid repeating the exact same set in the exact same order
+        filteredRecycled.sort(() => Math.random() - 0.5);
+        for (const item of filteredRecycled) {
+          if (finalItems.length >= limit) break;
+          finalItems.push(item);
+          selectedIds.add(item.id);
+        }
+      }
+    }
+
+    // If we still don't have enough items (e.g. extremely low content overall), fill from leftovers
     if (finalItems.length < limit) {
       const selectedIds = new Set(finalItems.map(i => i.id));
       const leftovers = (candidates ?? []).filter((c: any) => !selectedIds.has(c.id));
@@ -109,20 +151,23 @@ export async function POST(req: Request) {
           : null;
       } else if (c.type === "quiz") {
         Object.assign(base, c.payload);
-        base.question = c.payload?.question ?? c.title;
+        base.body = c.body;
+        base.question = c.body ?? c.payload?.question ?? c.title;
       } else if (c.type === "video") {
         Object.assign(base, c.payload);
       }
       return base;
     });
 
-    // 5) Log as seen for the user
+    // 5) Log as seen for the user using upsert to avoid duplicate key errors on recycled items
     if (shaped.length > 0) {
       const seenInserts = shaped.map((i: any) => ({
         user_id: user.id,
         content_id: i.id,
       }));
-      const { error: seenErr } = await admin.from("user_seen").insert(seenInserts);
+      const { error: seenErr } = await admin
+        .from("user_seen")
+        .upsert(seenInserts, { onConflict: "user_id,content_id" });
       if (seenErr) {
         console.error("Error marking cards as seen:", seenErr);
       }
