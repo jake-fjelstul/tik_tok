@@ -13,8 +13,10 @@
     "@supabase/supabase-js": "^2.45.4",
     "lucide-react": "^0.446.0",
     "next": "^15.0.0",
+    "openai": "^6.45.0",
     "react": "^19.0.0-rc-0622734448-20240905",
-    "react-dom": "^19.0.0-rc-0622734448-20240905"
+    "react-dom": "^19.0.0-rc-0622734448-20240905",
+    "youtube-transcript": "^1.3.1"
   },
   "devDependencies": {
     "@types/node": "^20.14.9",

@@ -40,20 +40,23 @@ export function softmaxSample(weights: Record<string, number>, k: number, temp =
 
 // 3 exploit + 1 explore (+ caller may append a weak/reinforce topic)
 export function chooseBatchTopics(interest: Record<string, number>): string[] {
+  const allTopicNames = Array.from(new Set([...TOPIC_NAMES, ...Object.keys(interest)]));
   const filled = Object.fromEntries(
-    TOPIC_NAMES.map(t => [t, interest[t] ?? CLAMP_MIN])
+    allTopicNames.map(t => [t, interest[t] ?? CLAMP_MIN])
   );
   const exploit = softmaxSample(filled, 3);
-  const rest = TOPIC_NAMES.filter(t => !exploit.includes(t));
-  const explore = rest[Math.floor(Math.random() * rest.length)];
+  const rest = allTopicNames.filter(t => !exploit.includes(t));
+  const explore = rest.length ? rest[Math.floor(Math.random() * rest.length)] : allTopicNames[0];
   return [...exploit, explore];
 }
 
 export function applyDelta(interest: Record<string, number>, topic: string, delta: number) {
   const next = { ...interest };
   next[topic] = Math.min(CLAMP_MAX, Math.max(CLAMP_MIN, (next[topic] ?? CLAMP_MIN) + delta));
-  for (const t of TOPIC_NAMES) {
+  const allTopicNames = Array.from(new Set([...TOPIC_NAMES, ...Object.keys(next)]));
+  for (const t of allTopicNames) {
     next[t] = Math.max(CLAMP_MIN, (next[t] ?? CLAMP_MIN) * DECAY);
   }
   return next;
 }
+

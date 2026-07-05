@@ -18,3 +18,16 @@ export const TOPICS: Record<string, string> = {
 };
 export const TOPIC_NAMES = Object.keys(TOPICS);
 export const BASELINE = 0.1;
+
+export function getTopicColor(topic: string): string {
+  if (TOPICS[topic]) return TOPICS[topic];
+  // Deterministic color generation based on name hash
+  let hash = 0;
+  for (let i = 0; i < topic.length; i++) {
+    hash = topic.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  const h = Math.abs(hash) % 360;
+  // Use HSL with high saturation/vibrancy for our premium theme
+  return `hsl(${h}, 75%, 55%)`;
+}
+

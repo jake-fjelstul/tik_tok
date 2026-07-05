@@ -13,11 +13,13 @@ import {
   Volume2,
   VolumeX,
   Music,
-  Heart
+  Heart,
+  Plus
 } from "lucide-react";
 import type { User } from "@supabase/supabase-js";
 import { supabaseBrowser } from "@/lib/supabaseBrowser";
-import { TOPICS, TOPIC_NAMES, BASELINE } from "@/lib/topics";
+import { TOPICS, TOPIC_NAMES, BASELINE, getTopicColor } from "@/lib/topics";
+
 
 // Dynamic YouTube Player API loader helper
 let ytScriptPromise: Promise<void> | null = null;
@@ -193,7 +195,7 @@ const FALLBACK_SEED = [
 /* Sub-components                                                     */
 /* ------------------------------------------------------------------ */
 function TopicEyebrow({ topic }: { topic: string }) {
-  const color = TOPICS[topic] || "#9A9BA6";
+  const color = getTopicColor(topic);
   return (
     <div className="lf-eyebrow" style={{ color }}>
       <span className="lf-dot" style={{ background: color }} />
@@ -228,14 +230,17 @@ function ReactBar({ reaction, onReact }: ReactBarProps) {
   );
 }
 
-function FactCard({ item, reaction, onReact }: { item: any; reaction: any; onReact: any }) {
-  const hue = TOPICS[item.topic] || "#ffffff";
+function FactCard({ item, reaction, onReact, onDiveDeeper }: { item: any; reaction: any; onReact: any; onDiveDeeper: (item: any) => void }) {
+  const hue = getTopicColor(item.topic);
   return (
     <>
       <TopicEyebrow topic={item.topic} />
       {item.tag && <div className="lf-mlabel" style={{ color: hue, marginBottom: 8 }}>{item.tag}</div>}
       <h2 className="lf-title">{item.title}</h2>
       <p className="lf-body">{item.body}</p>
+      <button className="lf-dive-btn" onClick={() => onDiveDeeper(item)} style={{ color: hue }}>
+        <Sparkles size={11} fill="currentColor" /> Dive Deeper
+      </button>
       <ReactBar reaction={reaction} onReact={onReact} />
     </>
   );
@@ -247,7 +252,8 @@ function VideoCard({
   reaction, 
   onReact,
   isMutedSession,
-  setIsMutedSession
+  setIsMutedSession,
+  onDiveDeeper
 }: { 
   item: any; 
   isActive: boolean; 
@@ -255,8 +261,10 @@ function VideoCard({
   onReact: any;
   isMutedSession: boolean;
   setIsMutedSession: (m: boolean) => void;
+  onDiveDeeper: (item: any) => void;
 }) {
-  const hue = TOPICS[item.topic] || "#ffffff";
+  const hue = getTopicColor(item.topic);
+
   const playerRef = useRef<any>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -420,9 +428,29 @@ function VideoCard({
         )}
       </div>
       <h3 className="lf-vtitle">{item.title}</h3>
-      <button className="lf-watch" onClick={openFull} style={{ background: hue, color: "#0B0D14" }}>
-        <Play size={16} fill="#0B0D14" /> Watch full on YouTube
-      </button>
+      <div style={{ display: "flex", gap: "8px", width: "100%", marginTop: "12px", marginBottom: "8px" }}>
+        <button className="lf-watch" onClick={openFull} style={{ background: hue, color: "#0B0D14", flex: 1, margin: 0 }}>
+          <Play size={14} fill="#0B0D14" /> Watch on YouTube
+        </button>
+        <button 
+          className="lf-dive-btn" 
+          onClick={() => onDiveDeeper(item)} 
+          style={{ 
+            color: hue, 
+            margin: 0, 
+            padding: "0 16px", 
+            height: "36px", 
+            display: "flex", 
+            alignItems: "center", 
+            justifyContent: "center",
+            background: "rgba(255, 255, 255, 0.03)",
+            border: "1px solid rgba(255, 255, 255, 0.08)",
+            borderRadius: "20px"
+          }}
+        >
+          <Sparkles size={11} fill="currentColor" /> Dive Deeper
+        </button>
+      </div>
       <ReactBar reaction={reaction} onReact={(k) => onReact(k)} />
     </>
   );
@@ -431,16 +459,19 @@ function VideoCard({
 function QuizCard({ 
   item, 
   sessionId, 
-  onAnswer 
+  onAnswer,
+  onDiveDeeper
 }: { 
   item: any; 
   sessionId: string | null; 
   onAnswer: (correct: boolean, correctText: string, selectedText: string) => void; 
+  onDiveDeeper: (item: any) => void;
 }) {
   const [picked, setPicked] = useState<number | null>(null);
   const [correctText, setCorrectText] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const hue = TOPICS[item.topic] || "#ffffff";
+  const hue = getTopicColor(item.topic);
+
 
   const answer = async (i: number) => {
     if (picked !== null || loading) return;
@@ -525,7 +556,14 @@ function QuizCard({
           </button>
         );
       })}
-      {picked !== null && <p className="lf-explain">{item.explain}</p>}
+      {picked !== null && (
+        <>
+          <p className="lf-explain">{item.explain}</p>
+          <button className="lf-dive-btn" onClick={() => onDiveDeeper(item)} style={{ color: hue }}>
+            <Sparkles size={11} fill="currentColor" /> Dive Deeper
+          </button>
+        </>
+      )}
     </>
   );
 }
@@ -603,7 +641,7 @@ function SessionEndCard({
             }}>
               <Check size={16} color="#36C46A" />
               <span style={{ fontSize: "13px", color: "#fff", fontWeight: 600 }}>
-                Mastered: <span style={{ color: TOPICS[topic] || "#fff" }}>{topic}</span>
+                Mastered: <span style={{ color: getTopicColor(topic) }}>{topic}</span>
               </span>
             </div>
           ))}
@@ -779,7 +817,7 @@ function ProgressView() {
           </div>
         ) : (
           topics.map((t: any) => {
-            const color = TOPICS[t.topic] || "#9A9BA6";
+            const color = getTopicColor(t.topic);
             
             let recallCopy = "Not yet attempted";
             if (t.attempts > 0) {
@@ -886,9 +924,10 @@ interface MeterProps {
   setOpen: (open: boolean) => void;
   disabledTopics: string[];
   onToggleTopic: (topic: string) => void;
+  onCreateCustom: () => void;
 }
 
-function Meter({ interest, open, setOpen, disabledTopics, onToggleTopic }: MeterProps) {
+function Meter({ interest, open, setOpen, disabledTopics, onToggleTopic, onCreateCustom }: MeterProps) {
   const sorted = Object.entries(interest).sort((a, b) => b[1] - a[1]);
   const max = Math.max(...sorted.map((s) => s[1]), 0.001);
 
@@ -907,7 +946,7 @@ function Meter({ interest, open, setOpen, disabledTopics, onToggleTopic }: Meter
                   width: 5,
                   height: Math.max(4, (w / max) * 16),
                   borderRadius: 2,
-                  background: isDisabled ? "#4B5563" : (TOPICS[t] || "#ccc"),
+                  background: isDisabled ? "#4B5563" : getTopicColor(t),
                   opacity: isDisabled ? 0.3 : 1
                 }}
               />
@@ -933,7 +972,7 @@ function Meter({ interest, open, setOpen, disabledTopics, onToggleTopic }: Meter
                 <span
                   className="lf-sname"
                   style={{
-                    color: isDisabled ? "#4B5563" : (TOPICS[t] || "#ccc"),
+                    color: isDisabled ? "#4B5563" : getTopicColor(t),
                     textDecoration: isDisabled ? "line-through" : "none",
                     opacity: isDisabled ? 0.5 : 1
                   }}
@@ -945,13 +984,40 @@ function Meter({ interest, open, setOpen, disabledTopics, onToggleTopic }: Meter
                     style={{
                       height: "100%",
                       width: `${Math.min(100, (w / max) * 100)}%`,
-                      background: isDisabled ? "#4B5563" : (TOPICS[t] || "#ccc")
+                      background: isDisabled ? "#4B5563" : getTopicColor(t)
                     }}
                   />
                 </div>
               </div>
             );
           })}
+          
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onCreateCustom();
+            }}
+            style={{
+              marginTop: "20px",
+              width: "100%",
+              padding: "12px",
+              background: "rgba(251, 191, 36, 0.1)",
+              border: "1px dashed rgba(251, 191, 36, 0.3)",
+              borderRadius: "12px",
+              color: "#FBBF24",
+              fontSize: "13px",
+              fontWeight: 600,
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: "8px",
+              transition: "all 0.2s"
+            }}
+          >
+            <Plus size={14} /> Add Custom Topic
+          </button>
+          
           <div className="lf-mlabel" style={{ marginTop: 24, textAlign: "center" }}>tap anywhere to close</div>
         </div>
       )}
@@ -959,12 +1025,15 @@ function Meter({ interest, open, setOpen, disabledTopics, onToggleTopic }: Meter
   );
 }
 
-function Onboarding({ onStart }: { onStart: (picks: string[]) => void }) {
-  const [sel, setSel] = useState<string[]>([]);
+interface OnboardingProps {
+  availableTopics: string[];
+  sel: string[];
+  toggle: (topic: string) => void;
+  onStart: () => void;
+  onCreateCustom: () => void;
+}
 
-  const toggle = (t: string) =>
-    setSel((s) => (s.includes(t) ? s.filter((x) => x !== t) : [...s, t]));
-
+function Onboarding({ availableTopics, sel, toggle, onStart, onCreateCustom }: OnboardingProps) {
   return (
     <div className="lf-onb">
       <div className="lf-mlabel" style={{ marginBottom: 12 }}>Set up your feed</div>
@@ -975,26 +1044,41 @@ function Onboarding({ onStart }: { onStart: (picks: string[]) => void }) {
         It tunes from here as you react. Pick at least 3.
       </p>
       <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
-        {TOPIC_NAMES.map((t) => {
+        {availableTopics.map((t) => {
           const on = sel.includes(t);
           return (
             <button
               key={t}
               className="lf-chip"
               onClick={() => toggle(t)}
-              style={on ? { background: TOPICS[t], borderColor: TOPICS[t], color: "#0B0D14", fontWeight: 600 } : {}}
+              style={on ? { background: getTopicColor(t), borderColor: getTopicColor(t), color: "#0B0D14", fontWeight: 600 } : {}}
             >
               {t}
             </button>
           );
         })}
+        <button
+          className="lf-chip"
+          onClick={onCreateCustom}
+          style={{ 
+            background: "rgba(251, 191, 36, 0.05)", 
+            borderColor: "rgba(251, 191, 36, 0.2)", 
+            color: "#FBBF24", 
+            fontWeight: 600, 
+            display: "inline-flex", 
+            alignItems: "center", 
+            gap: "6px" 
+          }}
+        >
+          <Plus size={14} /> Custom Topic
+        </button>
       </div>
       <button
         className="lf-start"
         disabled={sel.length < 3}
-        onClick={() => onStart(sel)}
+        onClick={onStart}
         style={{
-          background: sel.length < 3 ? "#2A2C38" : "#F3F3F6",
+          background: sel.length < 3 ? "#2A2C38" : "#FBBF24",
           color: sel.length < 3 ? "#6A6B76" : "#0B0D14"
         }}
       >
@@ -1003,6 +1087,7 @@ function Onboarding({ onStart }: { onStart: (picks: string[]) => void }) {
     </div>
   );
 }
+
 
 /* ------------------------------------------------------------------ */
 /* Main Client Component                                              */
@@ -1045,6 +1130,22 @@ export default function LearnFeed() {
   const [activeTab, setActiveTab] = useState<"feed" | "progress">("feed");
   const [disabledTopics, setDisabledTopics] = useState<string[]>([]);
   const disabledTopicsRef = useRef<string[]>([]);
+
+  // State variables for dynamic custom topic creation
+  const [availableTopics, setAvailableTopics] = useState<string[]>(TOPIC_NAMES);
+  const [onboardSelected, setOnboardSelected] = useState<string[]>([]);
+  const [isCustomModalOpen, setIsCustomModalOpen] = useState(false);
+  const [customDescription, setCustomDescription] = useState("");
+  const [customGenStep, setCustomGenStep] = useState<"idle" | "summarize" | "facts" | "audio" | "clips" | "finishing">("idle");
+
+  // State variables for Dive Deeper feature
+  const [deeperOpen, setDeeperOpen] = useState(false);
+  const [deeperLoading, setDeeperLoading] = useState(false);
+  const [deeperData, setDeeperData] = useState<any>(null);
+  const [deeperItem, setDeeperItem] = useState<any>(null);
+  const [deeperSpeaking, setDeeperSpeaking] = useState(false);
+
+
 
   // Load disabled topics & liked tracks on mount
   useEffect(() => {
@@ -1507,6 +1608,12 @@ export default function LearnFeed() {
               currentInterest[r.topic] = r.weight;
             });
             setInterest(currentInterest);
+
+            const custom = interestRows.map(r => r.topic).filter(t => !TOPIC_NAMES.includes(t));
+            if (custom.length > 0) {
+              setAvailableTopics(prev => Array.from(new Set([...prev, ...custom])));
+            }
+
             setPhase("feed");
             await loadMore();
             return;
@@ -1733,11 +1840,338 @@ export default function LearnFeed() {
     );
   }
 
+  const handleCreateCustomTopic = async () => {
+    if (!customDescription.trim()) return;
+    
+    // Start step progression animation
+    const steps: ("summarize" | "facts" | "audio" | "clips" | "finishing")[] = [
+      "summarize",
+      "facts",
+      "audio",
+      "clips",
+      "finishing"
+    ];
+    let stepIdx = 0;
+    setCustomGenStep(steps[0]);
+    const interval = setInterval(() => {
+      if (stepIdx < steps.length - 1) {
+        stepIdx++;
+        setCustomGenStep(steps[stepIdx]);
+      }
+    }, 2500);
+
+    try {
+      const res = await fetch("/api/topic/create", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ description: customDescription })
+      });
+      clearInterval(interval);
+      
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || "Failed to create topic");
+      }
+      
+      const data = await res.json();
+      const newTopic = data.topic;
+      const newItems = data.items;
+      
+      // Add topic to availableTopics list
+      setAvailableTopics(prev => Array.from(new Set([...prev, newTopic])));
+      
+      if (phase === "onboard") {
+        // Automatically select the newly created topic in onboarding
+        setOnboardSelected(prev => Array.from(new Set([...prev, newTopic])));
+      } else {
+        // If we are in feed phase, we want to:
+        // 1. Update interest weights state so that future API loadMore includes the topic
+        setInterest(prev => ({ ...prev, [newTopic]: 2.0 }));
+        
+        // 2. Prepend/insert the generated items right after the current active card!
+        if (newItems && newItems.length > 0) {
+          setItems(prev => {
+            const next = [...prev];
+            // Insert after the current active card
+            next.splice(activeIndex + 1, 0, ...newItems);
+            return next;
+          });
+        }
+      }
+      
+      setCustomDescription("");
+      setIsCustomModalOpen(false);
+      setCustomGenStep("idle");
+      setSheetOpen(false); // Close tuning sheet if open
+      
+    } catch (e: any) {
+      clearInterval(interval);
+      console.error(e);
+      alert(e.message || "Failed to generate custom topic. Please try again.");
+      setCustomGenStep("idle");
+    }
+  };
+
+  const handleDiveDeeper = async (item: any) => {
+    if (!item) return;
+    setDeeperItem(item);
+    setDeeperOpen(true);
+    setDeeperLoading(true);
+    setDeeperData(null);
+    setDeeperSpeaking(false);
+    
+    // Stop speaking synthesis if any is active
+    if (typeof window !== "undefined" && window.speechSynthesis) {
+      window.speechSynthesis.cancel();
+    }
+    
+    // Pause feed music & narration
+    stopAudio();
+
+    try {
+      const res = await fetch("/api/dive-deeper", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          topic: item.topic,
+          title: item.title,
+          text: item.body || item.question || item.title || "",
+          type: item.type
+        })
+      });
+      
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || "Failed to load detailed research");
+      }
+      
+      const data = await res.json();
+      setDeeperData(data);
+    } catch (e: any) {
+      console.error(e);
+      setDeeperData({ error: e.message || "Failed to load research" });
+    } finally {
+      setDeeperLoading(false);
+    }
+  };
+
+  const handleToggleDeeperAudio = () => {
+    if (typeof window === "undefined" || !window.speechSynthesis) return;
+    
+    if (deeperSpeaking) {
+      window.speechSynthesis.cancel();
+      setDeeperSpeaking(false);
+      return;
+    }
+    
+    if (!deeperData) return;
+    
+    const introText = `${deeperData.title}. ${deeperData.summary}`;
+    const sectionsText = (deeperData.sections || []).map((s: any) => `${s.heading}: ${s.content}`).join(". ");
+    const takeawayText = `Key Takeaway: ${deeperData.takeaway}`;
+    
+    const utterance = new SpeechSynthesisUtterance(`${introText}. ${sectionsText}. ${takeawayText}`);
+    utterance.rate = 1.2; // premium reading pace
+    utterance.onend = () => setDeeperSpeaking(false);
+    utterance.onerror = () => setDeeperSpeaking(false);
+    
+    setDeeperSpeaking(true);
+    window.speechSynthesis.speak(utterance);
+  };
+
+  const handleCloseDeeper = () => {
+    setDeeperOpen(false);
+    setDeeperItem(null);
+    setDeeperData(null);
+    if (typeof window !== "undefined" && window.speechSynthesis) {
+      window.speechSynthesis.cancel();
+    }
+    setDeeperSpeaking(false);
+  };
+
+  const renderDeeperDrawer = () => {
+    if (!deeperOpen) return null;
+    
+    const hue = deeperItem ? getTopicColor(deeperItem.topic) : "#FBBF24";
+    
+    return (
+      <div className="lf-drawer-overlay" onClick={handleCloseDeeper}>
+        <div 
+          className="lf-drawer-content" 
+          onClick={(e) => e.stopPropagation()}
+          style={{ "--deeper-accent": hue } as React.CSSProperties}
+        >
+          <div className="lf-drawer-header">
+            <div className="lf-drawer-title-group">
+              <span className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: hue }}>
+                Research: {deeperItem?.topic}
+              </span>
+              <h2 className="lf-drawer-title">
+                {deeperData?.title || deeperItem?.title || "Deep Dive"}
+              </h2>
+            </div>
+            <button className="lf-drawer-close" onClick={handleCloseDeeper}>
+              <X size={18} />
+            </button>
+          </div>
+          
+          <div className="lf-drawer-body">
+            {deeperLoading ? (
+              <div className="lf-deeper-loading">
+                <Loader2 className="lf-spin text-amber-400" size={32} />
+                <span className="text-xs text-gray-400">Synthesizing research papers & insights...</span>
+              </div>
+            ) : deeperData?.error ? (
+              <div className="flex flex-col items-center justify-center py-10 gap-4 text-center">
+                <span className="text-red-400 text-sm">{deeperData.error}</span>
+                <button 
+                  className="px-4 py-2 bg-white/5 border border-white/10 rounded-xl text-xs font-semibold text-gray-200" 
+                  onClick={() => handleDiveDeeper(deeperItem)}
+                >
+                  Retry Research
+                </button>
+              </div>
+            ) : (
+              <>
+                <div className="lf-deeper-summary">
+                  {deeperData.summary}
+                </div>
+                
+                {(deeperData.sections || []).map((sec: any, idx: number) => (
+                  <div key={idx} className="lf-deeper-section">
+                    <span className="lf-deeper-section-heading">
+                      {sec.heading}
+                    </span>
+                    <p className="lf-deeper-section-content">
+                      {sec.content}
+                    </p>
+                  </div>
+                ))}
+                
+                <div className="lf-deeper-takeaway">
+                  <div className="lf-deeper-takeaway-heading">
+                    <Sparkles size={12} fill="#FBBF24" color="#FBBF24" />
+                    Key Takeaway
+                  </div>
+                  <p className="lf-deeper-takeaway-content">
+                    {deeperData.takeaway}
+                  </p>
+                </div>
+                
+                <button className="lf-deeper-audio-btn" onClick={handleToggleDeeperAudio}>
+                  {deeperSpeaking ? (
+                    <>
+                      <VolumeX size={16} /> Stop Listening
+                    </>
+                  ) : (
+                    <>
+                      <Volume2 size={16} /> Listen to Research
+                    </>
+                  )}
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const renderCustomModal = () => {
+    if (!isCustomModalOpen) return null;
+    
+    return (
+      <div className="lf-modal-overlay" onClick={() => customGenStep === "idle" && setIsCustomModalOpen(false)}>
+        <div className="lf-modal-content" onClick={(e) => e.stopPropagation()}>
+          {customGenStep === "idle" ? (
+            <>
+              <h2 className="lf-modal-title">Learn something new</h2>
+              <p className="lf-modal-subtitle">
+                Describe a topic you want to learn about, and the system will generate cards, quizzes, and videos for it.
+              </p>
+              <textarea
+                className="lf-modal-input"
+                placeholder="e.g. History of Jazz, Quantum Computing, How mechanical watches work..."
+                value={customDescription}
+                onChange={(e) => setCustomDescription(e.target.value)}
+              />
+              <div className="lf-modal-actions">
+                <button 
+                  className="lf-modal-btn lf-modal-btn-secondary" 
+                  onClick={() => setIsCustomModalOpen(false)}
+                >
+                  Cancel
+                </button>
+                <button 
+                  className="lf-modal-btn lf-modal-btn-primary" 
+                  disabled={!customDescription.trim()}
+                  onClick={handleCreateCustomTopic}
+                >
+                  Generate Topic
+                </button>
+              </div>
+            </>
+          ) : (
+            <div className="lf-gen-status">
+              <Loader2 className="lf-spin text-amber-400 mb-4" size={40} />
+              <h2 className="lf-modal-title">Generating topic...</h2>
+              <p className="lf-modal-subtitle">This will take about 10-15 seconds.</p>
+              
+              <div className="lf-gen-steps">
+                <div className={`lf-gen-step ${
+                  customGenStep === "summarize" ? "lf-gen-step-active" : 
+                  ["facts", "audio", "clips", "finishing"].includes(customGenStep) ? "lf-gen-step-done" : "lf-gen-step-pending"
+                }`}>
+                  <span className="w-2 h-2 rounded-full bg-current" style={{ display: "inline-block", width: "8px", height: "8px" }} />
+                  <span>Analyzing description & summarizing</span>
+                </div>
+                <div className={`lf-gen-step ${
+                  customGenStep === "facts" ? "lf-gen-step-active" : 
+                  ["audio", "clips", "finishing"].includes(customGenStep) ? "lf-gen-step-done" : "lf-gen-step-pending"
+                }`}>
+                  <span className="w-2 h-2 rounded-full bg-current" style={{ display: "inline-block", width: "8px", height: "8px" }} />
+                  <span>Generating surprising fact cards</span>
+                </div>
+                <div className={`lf-gen-step ${
+                  customGenStep === "audio" ? "lf-gen-step-active" : 
+                  ["clips", "finishing"].includes(customGenStep) ? "lf-gen-step-done" : "lf-gen-step-pending"
+                }`}>
+                  <span className="w-2 h-2 rounded-full bg-current" style={{ display: "inline-block", width: "8px", height: "8px" }} />
+                  <span>Synthesizing voice narrations</span>
+                </div>
+                <div className={`lf-gen-step ${
+                  customGenStep === "clips" ? "lf-gen-step-active" : 
+                  ["finishing"].includes(customGenStep) ? "lf-gen-step-done" : "lf-gen-step-pending"
+                }`}>
+                  <span className="w-2 h-2 rounded-full bg-current" style={{ display: "inline-block", width: "8px", height: "8px" }} />
+                  <span>Discovering and parsing YouTube clips</span>
+                </div>
+                <div className={`lf-gen-step ${
+                  customGenStep === "finishing" ? "lf-gen-step-active font-semibold" : "lf-gen-step-pending"
+                }`}>
+                  <span className="w-2 h-2 rounded-full bg-current" style={{ display: "inline-block", width: "8px", height: "8px" }} />
+                  <span>Polishing and loading into feed</span>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
   if (phase === "onboard") {
     return (
       <div className="lf-root">
         <div className="lf-container">
-          <Onboarding onStart={handleStart} />
+          <Onboarding 
+            availableTopics={availableTopics}
+            sel={onboardSelected}
+            toggle={(t) => setOnboardSelected(s => s.includes(t) ? s.filter(x => x !== t) : [...s, t])}
+            onStart={() => handleStart(onboardSelected)}
+            onCreateCustom={() => setIsCustomModalOpen(true)}
+          />
+          {renderCustomModal()}
         </div>
       </div>
     );
@@ -1846,6 +2280,7 @@ export default function LearnFeed() {
               setOpen={setSheetOpen}
               disabledTopics={disabledTopics}
               onToggleTopic={handleToggleTopic}
+              onCreateCustom={() => setIsCustomModalOpen(true)}
             />
             {/* Background Music Control */}
             <div className="lf-sound-container" style={{ right: "64px" }}>
@@ -1932,7 +2367,7 @@ export default function LearnFeed() {
 
             <div className="lf-feed">
               {items.map((item, idx) => {
-                const hue = TOPICS[item.topic] || "#ffffff";
+                const hue = getTopicColor(item.topic);
                 let cardStyle = {};
                 if (item.type === "fact") {
                   cardStyle = { background: `radial-gradient(130% 90% at 15% 12%, ${hue}1f 0%, rgba(11,13,20,0) 60%)` };
@@ -1957,6 +2392,7 @@ export default function LearnFeed() {
                         item={item}
                         reaction={reactions[item.id]}
                         onReact={(k: any) => handleReact(item, k)}
+                        onDiveDeeper={handleDiveDeeper}
                       />
                     )}
                     {item.type === "video" && (
@@ -1967,6 +2403,7 @@ export default function LearnFeed() {
                         onReact={(k: any) => handleReact(item, k)}
                         isMutedSession={isMutedSession}
                         setIsMutedSession={setIsMutedSession}
+                        onDiveDeeper={handleDiveDeeper}
                       />
                     )}
                     {item.type === "quiz" && (
@@ -1974,6 +2411,7 @@ export default function LearnFeed() {
                         item={item}
                         sessionId={sessionId}
                         onAnswer={(c, correctText, selectedText) => handleAnswer(item, c, correctText, selectedText)}
+                        onDiveDeeper={handleDiveDeeper}
                       />
                     )}
                     {item.type === "session_end" && (
@@ -2094,6 +2532,8 @@ export default function LearnFeed() {
             </button>
           </div>
         )}
+        {renderCustomModal()}
+        {renderDeeperDrawer()}
       </div>
     </div>
   );

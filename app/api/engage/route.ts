@@ -54,8 +54,9 @@ export async function POST(req: Request) {
       // Apply delta update to target topic
       interest[topic] = Math.min(CLAMP_MAX, Math.max(CLAMP_MIN, (interest[topic] ?? CLAMP_MIN) + delta));
       
+      const allTopicNames = Array.from(new Set([...TOPIC_NAMES, ...Object.keys(interest)]));
       // Decay all other topics
-      for (const t of TOPIC_NAMES) {
+      for (const t of allTopicNames) {
         if (t !== topic) {
           interest[t] = Math.max(CLAMP_MIN, (interest[t] ?? CLAMP_MIN) * DECAY);
         }

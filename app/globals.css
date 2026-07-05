@@ -518,3 +518,349 @@
 .lf-heart-pulse {
   animation: heart-pulse 0.4s ease-in-out;
 }
+
+/* Custom Topic Modal Styles */
+.lf-modal-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(8, 9, 15, 0.9);
+  backdrop-filter: blur(12px);
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.lf-modal-content {
+  width: 100%;
+  max-width: 400px;
+  background: #141622;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 24px;
+  padding: 28px;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.6);
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+
+.lf-modal-title {
+  font-family: Fraunces, serif;
+  font-size: 24px;
+  font-weight: 600;
+  color: #F3F3F6;
+  margin-bottom: 8px;
+}
+
+.lf-modal-subtitle {
+  font-size: 13px;
+  color: #9A9BA6;
+  line-height: 1.4;
+  margin-bottom: 20px;
+}
+
+.lf-modal-input {
+  width: 100%;
+  height: 90px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 14px;
+  padding: 12px;
+  color: #fff;
+  font-family: inherit;
+  font-size: 15px;
+  resize: none;
+  outline: none;
+  transition: border-color 0.2s;
+  margin-bottom: 20px;
+}
+
+.lf-modal-input:focus {
+  border-color: #FBBF24;
+}
+
+.lf-modal-actions {
+  display: flex;
+  gap: 12px;
+}
+
+.lf-modal-btn {
+  flex: 1;
+  padding: 14px;
+  border-radius: 14px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  border: none;
+  transition: all 0.2s;
+  font-family: inherit;
+  text-align: center;
+}
+
+.lf-modal-btn-primary {
+  background: #FBBF24;
+  color: #0B0D14;
+}
+
+.lf-modal-btn-primary:disabled {
+  background: #2A2C38;
+  color: #6A6B76;
+  cursor: not-allowed;
+}
+
+.lf-modal-btn-secondary {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: #EDEDF2;
+}
+
+/* Step Progress indicator */
+.lf-gen-status {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 10px 0;
+}
+
+.lf-gen-steps {
+  width: 100%;
+  margin-top: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  text-align: left;
+}
+
+.lf-gen-step {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  color: #6A6B76;
+  transition: color 0.3s;
+}
+
+.lf-gen-step-active {
+  color: #FBBF24;
+  font-weight: 500;
+}
+
+.lf-gen-step-done {
+  color: #36C46A;
+}
+
+.lf-gen-step-pending {
+  color: #4B5563;
+}
+
+/* Dive Deeper Feature Styles */
+.lf-dive-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 20px;
+  color: #FBBF24;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  padding: 6px 14px;
+  margin: 14px 0 6px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  backdrop-filter: blur(8px);
+}
+
+.lf-dive-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.15);
+  transform: translateY(-1px);
+}
+
+.lf-dive-btn:active {
+  transform: scale(0.97);
+}
+
+.lf-drawer-overlay {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.65);
+  backdrop-filter: blur(12px);
+  z-index: 100;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  animation: fadeIn 0.25s ease-out;
+}
+
+.lf-drawer-content {
+  width: 100%;
+  max-width: 480px;
+  max-height: 82%;
+  background: #0B0D14;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 24px 24px 0 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: 0 -10px 40px rgba(0, 0, 0, 0.6);
+  animation: slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.lf-drawer-header {
+  padding: 18px 20px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.lf-drawer-title-group {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.lf-drawer-title {
+  font-family: "Fraunces", serif;
+  font-size: 19px;
+  font-weight: 600;
+  color: #F3F3F6;
+  margin: 0;
+}
+
+.lf-drawer-close {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  color: #9A9BA6;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.lf-drawer-close:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+
+.lf-drawer-body {
+  padding: 20px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  flex: 1;
+}
+
+.lf-deeper-summary {
+  background: rgba(255, 255, 255, 0.01);
+  border-left: 4px solid var(--deeper-accent, #FBBF24);
+  padding: 12px 16px;
+  border-radius: 0 12px 12px 0;
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: #EDEDF2;
+}
+
+.lf-deeper-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.lf-deeper-section-heading {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--deeper-accent, #FBBF24);
+}
+
+.lf-deeper-section-content {
+  font-size: 13px;
+  line-height: 1.6;
+  color: #9A9BA6;
+}
+
+.lf-deeper-takeaway {
+  background: radial-gradient(100% 100% at 50% 0%, rgba(251, 191, 36, 0.04) 0%, rgba(11, 13, 20, 0) 100%);
+  border: 1px solid rgba(251, 191, 36, 0.12);
+  padding: 14px 16px;
+  border-radius: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.lf-deeper-takeaway-heading {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #FBBF24;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.lf-deeper-takeaway-content {
+  font-size: 13px;
+  line-height: 1.5;
+  color: #EDEDF2;
+  font-style: italic;
+}
+
+.lf-deeper-audio-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 12px;
+  cursor: pointer;
+  transition: all 0.2s;
+  width: 100%;
+  margin-top: 6px;
+}
+
+.lf-deeper-audio-btn:hover {
+  background: rgba(255, 255, 255, 0.09);
+  border-color: rgba(255, 255, 255, 0.15);
+}
+
+.lf-deeper-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 60px 0;
+  gap: 16px;
+  color: #9A9BA6;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slideUp {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
+
+
